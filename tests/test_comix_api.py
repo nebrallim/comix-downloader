@@ -203,6 +203,32 @@ class ComixChapterTests(unittest.TestCase):
                 unavailable_script="Boolean(document.body)",
             ))
 
+    def test_reader_ready_succeeds_even_if_unavailable_script_is_present(self):
+        class ReadyPage:
+            async def evaluate(self, script, **kwargs):
+                if script == "document.title":
+                    return "Comix"
+                if "querySelectorAll" in script:
+                    return True
+                if "#challenge-running" in script:
+                    return False
+                if "initial-data" in script or "document.body" in script:
+                    return True
+                return False
+
+            async def sleep(self, _seconds):
+                pass
+
+        # Should complete without error because ready_script evaluated to True
+        asyncio.run(comix_module._wait_for_comix_page(
+            ReadyPage(),
+            "document.querySelectorAll('.rpage-page').length > 0",
+            headless=True,
+            operation="chapter reader",
+            timeout=1,
+            unavailable_script="Boolean(document.body)",
+        ))
+
     def test_reader_service_reuses_browser_and_closes_it(self):
         class Browser:
             def __init__(self):

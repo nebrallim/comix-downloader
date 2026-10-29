@@ -54,6 +54,26 @@ _CHAPTER_ROWS_JS = """(() => {
     return JSON.stringify(rows);
 })()"""
 
+_READER_UNAVAILABLE_JS = """(() => {
+    const title = (document.title || '').trim();
+    if (/^404\\b/i.test(title)) return true;
+    try {
+        const el = document.getElementById('initial-data');
+        if (el && el.textContent) {
+            const data = JSON.parse(el.textContent);
+            if (data.page === 'error' || (data.error && data.error.code === 404) || data.page === 'manga') {
+                return true;
+            }
+        }
+    } catch (e) {}
+    const heading = document.querySelector('h1, h2, .error-code, .error-title');
+    if (heading && /\\b404\\b|page not found|could not be found/i.test(heading.innerText || '')) return true;
+    const errBox = document.querySelector('.error-page, .error-container, [data-error]');
+    if (errBox && /\\b404\\b|page not found|could not be found/i.test(errBox.innerText || '')) return true;
+    return false;
+})()"""
+
+
 
 class MangaInfoFetchError(RuntimeError):
     """Raised when Comix does not expose a complete manga detail payload."""
@@ -265,13 +285,13 @@ async def _wait_for_comix_page(
             last_title = (await page.evaluate("document.title")) or ""
             challenge = await _page_has_cloudflare_challenge(page)
             saw_challenge = saw_challenge or challenge
+            ready = bool(await page.evaluate(ready_script))
+            if ready and not challenge:
+                return
             if unavailable_script and bool(await page.evaluate(unavailable_script)):
                 raise ComixPageUnavailableError(
                     f"Comix {operation} is unavailable (the requested route was not found)"
                 )
-            ready = bool(await page.evaluate(ready_script))
-            if ready and not challenge:
-                return
         except ComixPageUnavailableError:
             raise
         except Exception:
@@ -1101,10 +1121,7 @@ class ComixAPI:
                 headless=headless,
                 operation="chapter reader",
                 timeout=90.0,
-                unavailable_script=(
-                    "Boolean(document.body && /could not be found|page not found|404/i.test("
-                    "document.body.innerText || ''))"
-                ),
+                unavailable_script=_READER_UNAVAILABLE_JS,
             )
             page_count = await page.evaluate("document.querySelectorAll('.rpage-page').length") or 0
             await _publish_comix_session(browser, page)
