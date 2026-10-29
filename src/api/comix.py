@@ -1140,57 +1140,111 @@ class ComixAPI:
                         page_num - 1,
                     )
                     break
-                # Scroll page element into view to trigger render/decryption
-                try:
-                    await page.evaluate(
-                        f"(() => {{ const el = document.querySelector('.rpage-page[data-page=\"{page_num}\"]'); if (el) el.scrollIntoView({{behavior: 'instant', block: 'center'}}); }})()"
-                    )
-                except Exception:
-                    pass
-                    
-                # Wait for image element or canvas element to be ready
                 ready = None
-                for _attempt in range(150):
+                for scroll_attempt in range(2):
+                    if scroll_attempt == 1:
+                        logger.info(f"Page {page_num} hang detected. Breaking ad layer and emulating scroll up/down.")
+                        try:
+                            # Break the glass layer with a real click
+                            try:
+                                import nodriver.cdp.input_ as cdp_input
+                                await page.send(cdp_input.dispatch_mouse_event(
+                                    type_="mousePressed", x=100, y=100, button=cdp_input.MouseButton.LEFT, click_count=1
+                                ))
+                                await page.sleep(0.05)
+                                await page.send(cdp_input.dispatch_mouse_event(
+                                    type_="mouseReleased", x=100, y=100, button=cdp_input.MouseButton.LEFT, click_count=1
+                                ))
+                            except Exception as e:
+                                logger.debug(f"CDP click failed: {e}")
+                                
+                            await page.sleep(0.5)
+                            
+                            # Close any new popup/ad tabs that opened
+                            if hasattr(browser, 'tabs'):
+                                for tab in list(browser.tabs):
+                                    if tab != page and tab != browser.main_tab:
+                                        try:
+                                            await tab.close()
+                                        except Exception:
+                                            pass
+                        except Exception as e:
+                            logger.debug(f"Glass layer break failed: {e}")
+
+                        try:
+                            # Emulate physical mouse scroll up events via CDP
+                            for _ in range(10):
+                                await page.send(cdp_input.dispatch_mouse_event(
+                                    type_="mouseWheel", x=100, y=100, delta_x=0, delta_y=-400
+                                ))
+                                await page.sleep(0.05)
+                                
+                            await page.sleep(1.5)
+                            
+                            # Emulate physical mouse scroll down events via CDP
+                            for _ in range(10):
+                                await page.send(cdp_input.dispatch_mouse_event(
+                                    type_="mouseWheel", x=100, y=100, delta_x=0, delta_y=400
+                                ))
+                                await page.sleep(0.05)
+                                
+                            await page.sleep(1.5)
+                        except Exception as e:
+                            logger.debug(f"CDP scroll failed: {e}")
+
+                    # Scroll page element into view to trigger render/decryption
                     try:
-                        ready_res = await page.evaluate(
-                            f"""(() => {{
-                                const el = document.querySelector('.rpage-page[data-page="{page_num}"]');
-                                if (!el) return null;
-                                const isLoading = el.classList.contains('is-loading');
-                                
-                                // Check canvas
-                                const c = el.querySelector('canvas');
-                                if (c && c.width > 10 && c.height > 10) {{
-                                    if (isLoading) return null; // Wait if still loading
-                                    const toDataURL = window.__origToDataURL || c.toDataURL;
-                                    const data = toDataURL.call(c, 'image/webp', 0.95);
-                                    if (data.length < 20000) {{
-                                        return JSON.stringify({{type: 'skip'}}); // Blank/Ad canvas
-                                    }}
-                                    return JSON.stringify({{type: 'canvas_data', data: data}});
-                                }}
-                                
-                                // Check image
-                                const i = el.querySelector('img');
-                                if (i && i.src) {{
-                                    if (i.complete) {{
-                                        if (i.naturalWidth > 10 && i.naturalHeight > 10) {{
-                                            return JSON.stringify({{type: 'img', src: i.src}});
-                                        }}
-                                        if (i.naturalWidth > 0 && i.naturalWidth <= 10) {{
-                                            return JSON.stringify({{type: 'skip'}}); // 1x1 placeholder
-                                        }}
-                                    }}
-                                }}
-                                return null;
-                            }})()"""
+                        await page.evaluate(
+                            f"(() => {{ const el = document.querySelector('.rpage-page[data-page=\"{page_num}\"]'); if (el) el.scrollIntoView({{behavior: 'instant', block: 'center'}}); }})()"
                         )
-                        ready = json.loads(ready_res) if ready_res else None
                     except Exception:
-                        ready = None
+                        pass
+                        
+                    # Wait for image element or canvas element to be ready (25 polls = 5s initial, 150 polls = 30s hang retry)
+                    for _attempt in range(25 if scroll_attempt == 0 else 150):
+                        try:
+                            ready_res = await page.evaluate(
+                                f"""(() => {{
+                                    const el = document.querySelector('.rpage-page[data-page="{page_num}"]');
+                                    if (!el) return null;
+                                    const isLoading = el.classList.contains('is-loading');
+                                    
+                                    // Check canvas
+                                    const c = el.querySelector('canvas');
+                                    if (c && c.width > 10 && c.height > 10) {{
+                                        if (isLoading) return null; // Wait if still loading
+                                        const toDataURL = window.__origToDataURL || c.toDataURL;
+                                        const data = toDataURL.call(c, 'image/webp', 0.95);
+                                        if (data.length < 20000) {{
+                                            return JSON.stringify({{type: 'skip'}}); // Blank/Ad canvas
+                                        }}
+                                        return JSON.stringify({{type: 'canvas_data', data: data}});
+                                    }}
+                                    
+                                    // Check image
+                                    const i = el.querySelector('img');
+                                    if (i && i.src) {{
+                                        if (i.complete) {{
+                                            if (i.naturalWidth > 10 && i.naturalHeight > 10) {{
+                                                return JSON.stringify({{type: 'img', src: i.src}});
+                                            }}
+                                            if (i.naturalWidth > 0 && i.naturalWidth <= 10) {{
+                                                return JSON.stringify({{type: 'skip'}}); // 1x1 placeholder
+                                            }}
+                                        }}
+                                    }}
+                                    return null;
+                                }})()"""
+                            )
+                            ready = json.loads(ready_res) if ready_res else None
+                        except Exception:
+                            ready = None
+                        if ready:
+                            break
+                        await page.sleep(0.2)
+                        
                     if ready:
                         break
-                    await page.sleep(0.2)
                     
                 if not ready:
                     logger.error(f"Page {page_num} timed out waiting for render.")

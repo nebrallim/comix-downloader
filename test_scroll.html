@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scroll and Click Test</title>
+    <style>
+        body { 
+            height: 5000px; /* Make page scrollable */
+            padding: 20px; 
+            font-family: sans-serif; 
+            margin: 0;
+        }
+        #glass {
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%;
+            background: rgba(255, 0, 0, 0.3); 
+            z-index: 9999;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            cursor: pointer;
+        }
+        #glass h1 {
+            color: white;
+            text-shadow: 1px 1px 2px black;
+        }
+        #log { 
+            position: fixed; 
+            top: 10px; 
+            right: 10px; 
+            background: #222; 
+            color: #0f0;
+            padding: 10px; 
+            border: 1px solid #ccc; 
+            width: 350px; 
+            height: 500px; 
+            overflow-y: auto; 
+            font-family: monospace;
+            opacity: 0.9;
+        }
+        .marker {
+            width: 100%;
+            height: 2px;
+            background: blue;
+            margin-top: 1000px;
+        }
+    </style>
+</head>
+<body>
+    <div id="glass"><h1>Glass Layer (Click anywhere to break)</h1></div>
+    <div id="log">Logs:<br></div>
+    
+    <h2>Scroll down to see more...</h2>
+    <div class="marker">1000px</div>
+    <div class="marker">2000px</div>
+    <div class="marker">3000px</div>
+    <div class="marker">4000px</div>
+
+    <script>
+        const log = document.getElementById('log');
+        function addLog(msg) {
+            log.innerHTML += `[${new Date().toISOString().split('T')[1].slice(0,-1)}] ${msg}<br>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        const glass = document.getElementById('glass');
+        glass.addEventListener('click', (e) => {
+            // Simulate the popup ad behavior
+            window.open('about:blank', '_blank');
+            glass.style.display = 'none';
+            addLog(`Glass clicked at x:${e.clientX} y:${e.clientY}. Removed and opened popup.`);
+        });
+
+        let wheelCount = 0;
+        window.addEventListener('wheel', (e) => {
+            wheelCount++;
+            if (wheelCount % 5 === 0) {
+                // Log every 5th wheel event to avoid spamming
+                addLog(`Wheel event: deltaY=${e.deltaY} (x${wheelCount})`);
+            }
+        });
+
+        let scrollTimeout;
+        window.addEventListener('scroll', () => {
+            // Debounce scroll logging slightly
+            if (scrollTimeout) return;
+            scrollTimeout = setTimeout(() => {
+                addLog(`Scroll position: ${Math.round(window.scrollY)}px`);
+                scrollTimeout = null;
+            }, 100);
+        });
+    </script>
+</body>
+</html>
