@@ -105,7 +105,7 @@ class NodriverCompatTests(unittest.TestCase):
             package_root = Path(tmpdir)
             create_fake_nodriver_package(
                 package_root,
-                {"other.py": b"VALUE = 1\n# JSON (\xb1Inf).\n"},
+                {"other.py": b"VALUE = \xb1\n# JSON (\xb1Inf).\n"},
             )
 
             with isolated_nodriver_package(package_root):

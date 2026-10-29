@@ -1211,24 +1211,27 @@ class ComixAPI:
                                     
                                     // Check canvas
                                     const c = el.querySelector('canvas');
-                                    if (c && c.width > 10 && c.height > 10) {{
+                                    if (c && (c.width > 10 || c.height > 10)) {{
                                         if (isLoading) return null; // Wait if still loading
                                         const toDataURL = window.__origToDataURL || c.toDataURL;
                                         const data = toDataURL.call(c, 'image/webp', 0.95);
-                                        if (data.length < 20000) {{
+                                        if (data.length < 20000 && c.width > 100 && c.height > 100) {{
                                             return JSON.stringify({{type: 'skip'}}); // Blank/Ad canvas
                                         }}
                                         return JSON.stringify({{type: 'canvas_data', data: data}});
+                                    }}
+                                    if (c && c.width > 0 && c.height > 0 && c.width <= 10 && c.height <= 10) {{
+                                        return JSON.stringify({{type: 'skip'}}); // 1x1 placeholder canvas
                                     }}
                                     
                                     // Check image
                                     const i = el.querySelector('img');
                                     if (i && i.src) {{
                                         if (i.complete) {{
-                                            if (i.naturalWidth > 10 && i.naturalHeight > 10) {{
+                                            if (i.naturalWidth > 10 || i.naturalHeight > 10) {{
                                                 return JSON.stringify({{type: 'img', src: i.src}});
                                             }}
-                                            if (i.naturalWidth > 0 && i.naturalWidth <= 10) {{
+                                            if (i.naturalWidth > 0 && i.naturalHeight > 0) {{
                                                 return JSON.stringify({{type: 'skip'}}); // 1x1 placeholder
                                             }}
                                         }}

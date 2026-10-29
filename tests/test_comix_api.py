@@ -10,18 +10,21 @@ from unittest.mock import patch
 
 
 def load_comix_api():
-    requests_stub = types.ModuleType("requests")
+    try:
+        import requests
+    except ImportError:
+        requests_stub = types.ModuleType("requests")
 
-    class Session:
-        def __init__(self):
-            self.headers = {}
+        class Session:
+            def __init__(self):
+                self.headers = {}
 
-        def get(self, *args, **kwargs):
-            raise AssertionError("requests.Session.get should not be called by these tests")
+            def get(self, *args, **kwargs):
+                raise AssertionError("requests.Session.get should not be called by these tests")
 
-    requests_stub.Session = Session
-    requests_stub.exceptions = types.SimpleNamespace(RequestException=Exception)
-    sys.modules.setdefault("requests", requests_stub)
+        requests_stub.Session = Session
+        requests_stub.exceptions = types.SimpleNamespace(RequestException=Exception)
+        sys.modules.setdefault("requests", requests_stub)
 
     module = importlib.import_module("src.api.comix")
     return module.ComixAPI
@@ -510,6 +513,56 @@ class ComixChapterTests(unittest.TestCase):
         self.assertFalse(asyncio.run(comix_module._solve_comix_waf_challenge(
             Browser(), ChallengePage(), headless=True
         )))
+
+    def test_chapter_images_extracts_thin_slices(self):
+        class MockTab:
+            def __init__(self):
+                self.evaluated_scripts = []
+
+            async def send(self, _cmd):
+                pass
+
+            async def evaluate(self, script, **kwargs):
+                self.evaluated_scripts.append(script)
+                if "querySelectorAll('.rpage-page').length" in script:
+                    return 2
+                if 'data-page="1"' in script:
+                    if "is-loading" in script:
+                        return json.dumps({"type": "img", "src": "https://cdn.example/p1.webp"})
+                    return "https://cdn.example/p1.webp"
+                if 'data-page="2"' in script:
+                    if "is-loading" in script:
+                        # Emulating thin slice like 1280x10
+                        return json.dumps({"type": "img", "src": "https://cdn.example/p2_thin_slice.webp"})
+                    return "https://cdn.example/p2_thin_slice.webp"
+                return True
+
+            async def sleep(self, _seconds):
+                pass
+
+        class MockBrowser:
+            def __init__(self):
+                self.main_tab = MockTab()
+                self.cookies = types.SimpleNamespace(save=self._save)
+
+            async def _save(self, *args, **kwargs):
+                pass
+
+            async def get(self, _url):
+                return self.main_tab
+
+        browser = MockBrowser()
+        with patch.object(comix_module, "_wait_for_comix_page", return_value=None), \
+             patch.object(comix_module, "_publish_comix_session", return_value=None), \
+             patch.object(comix_module, "_save_comix_cookies", return_value=None):
+            report = asyncio.run(ComixAPI._get_chapter_images_async(
+                123, "test-manga", "1", True, browser=browser
+            ))
+
+        self.assertEqual(report.image_urls, ["https://cdn.example/p1.webp", "https://cdn.example/p2_thin_slice.webp"])
+        self.assertEqual(report.page_count, 2)
+        self.assertEqual(report.failed_pages, [])
+        self.assertEqual(report.skipped_pages, [])
 
 
 if __name__ == "__main__":

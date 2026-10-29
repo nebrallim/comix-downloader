@@ -139,10 +139,11 @@ Rectangle {
             clip: true
             
             ListView {
+                id: taskListView
                 model: taskModel
                 spacing: 8
                 delegate: ColumnLayout {
-                    width: parent.width
+                    width: ListView.view ? ListView.view.width : (parent ? parent.width : 0)
                     spacing: 2
                     
                     RowLayout {
@@ -162,8 +163,8 @@ Rectangle {
                         Layout.fillWidth: true; Layout.preferredHeight: 4
                         color: bgElevated; radius: 2
                         Rectangle {
-                            height: parent.height; radius: 2
-                            width: parent.width * (model.progress / 100)
+                            height: parent ? parent.height : 0; radius: 2
+                            width: parent ? parent.width * (model.progress / 100) : 0
                             color: model.status === "Failed" ? "#E57373" : (model.status === "Complete" ? success : accentPrimary)
                             Behavior on width { NumberAnimation { duration: 150 } }
                         }
